@@ -70,7 +70,7 @@ platformdirs==4.3.7
 plotly==6.0.1
 pluggy==1.5.0
 prompt_toolkit==3.0.50
-protobuf==5.29.4
+
 pure_eval==0.2.3
 pyarrow==18.1.0
 pycparser==2.22
