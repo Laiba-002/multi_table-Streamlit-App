@@ -77,7 +77,7 @@ setuptools
 six
 smmap
 sniffio
-snowflake-connector-python
+snowflake-connector-python[pandas]
 sortedcontainers
 soupsieve
 stack-data
