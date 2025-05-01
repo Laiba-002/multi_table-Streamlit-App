@@ -1,0 +1,2 @@
+{"timestamp": "2025-05-01 12:19:59", "nlp_tokens": 60, "table_tokens": 6, "viz_tokens": 51, "total_tokens": 117}
+{"timestamp": "2025-05-01 12:48:28", "nlp_tokens": 35, "table_tokens": 10, "viz_tokens": 51, "total_tokens": 96}

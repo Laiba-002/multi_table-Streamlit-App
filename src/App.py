@@ -139,7 +139,7 @@ if "token" not in st.session_state:
 
 # Get query parameters using st.query_params
 query_params = st.query_params
-token = query_params.get("token", [None])  
+token = query_params.get("token", [None])
 # Store the token in session state if it exists
 if token:
     st.session_state.token = token
@@ -203,10 +203,10 @@ def execute_snowflake_query(query):
     conn = init_snowflake_connection()
     if not conn:
         return None
-    # # Add security check to ensure all queries filter by user access
+    # Add security check to ensure all queries filter by user access
     # if "machine_access_info_ai" not in query.upper() and "WHERE" in query.upper() and st.session_state.user_code:
     #     # Add appropriate access control to query
-    #     query = query.replace("WHERE", f"WHERE machine_access_info_ai.user_code='{st.session_state.user_code}' AND machine_access_info_ai.Plantcode='{st.session_state.plant_code}' AND ")
+        # query = query.replace("WHERE", f"WHERE machine_access_info_ai.user_code='{st.session_state.user_code}' AND machine_access_info_ai.Plantcode='{st.session_state.plant_code}' AND ")
     query_hash = hash(query)
     if query_hash in st.session_state.query_cache:
         logging.info(f"Cache hit for query: {query}")
