@@ -10,7 +10,7 @@ matplotlib-inline==0.1.7
 # === LLMs & Embeddings ===
 openai==1.68.2
 tiktoken==0.6.0
-# faiss-cpu==1.10.0
+
 sentence-transformers==3.4.1
 
 # === Backend/RAG Utilities ===
@@ -33,8 +33,7 @@ snowflake-cli==3.6.0
 
 # === ML/DL Stack (optional, keep only what you need) ===
 scikit-learn==1.6.1
-# scipy==1.15.2
-# torch==2.6.0
+
 
 # === Others (must-have utils) ===
 joblib==1.4.2
@@ -42,6 +41,4 @@ tenacity==9.0.0
 typing_extensions==4.13.0
 packaging==24.2
 
-# # === Only if needed ===
-# markdown-it-py==3.0.0
-# mdurl==0.1.2
+
