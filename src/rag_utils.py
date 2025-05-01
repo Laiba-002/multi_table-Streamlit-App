@@ -223,13 +223,18 @@ def retrieve_relevant_contexts(query, vector_stores, top_k=3):
     token = st.query_params.get("token")    
 def decode_jwt_token(token):
     try:
+        # Ensure token is bytes
+        if isinstance(token, str):
+            token = token.encode("utf-8")  # Convert string to byte
         # For testing with your provided token, we'll skip verification
         # In production, you should properly verify the token
         decoded_token = jwt.decode(token, options={"verify_signature": False})
+        logging.info(f"Decoded token: {decoded_token}")
         
         # Extract user information
         user_code = decoded_token.get("userCode")
         plant_code = decoded_token.get("plantCode")
+        logging.info(f"Extracted user_code: {user_code}, plant_code: {plant_code}")
         
         return user_code, plant_code, decoded_token
     except Exception as e:
