@@ -21,7 +21,7 @@ from pathlib import Path
 import tiktoken
 import logging
 import jwt  # PyJWT
-import speech_recognition as sr
+# import speech_recognition as sr
 
 # Configure logging
 logging.basicConfig(
@@ -223,23 +223,23 @@ def log_token_usage(nlp_tokens, table_tokens, viz_tokens):
 
 
 
-def audio_to_text():
-    """Convert audio input to text using speech recognition."""
-    recognizer = sr.Recognizer()
-    with sr.Microphone() as source:
-        # st.info("Listening... Please speak into the microphone.")
-        try:
-            audio = recognizer.listen(source, timeout=10)
-            text = recognizer.recognize_google(audio)
-            # st.success(f"Recognized: {text}")
-            return text
-        except sr.UnknownValueError:
-            st.error("Sorry, could not understand the audio.")
-        except sr.RequestError as e:
-            st.error(f"Could not request results; {e}")
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-    return ""
+# def audio_to_text():
+#     """Convert audio input to text using speech recognition."""
+#     recognizer = sr.Recognizer()
+#     with sr.Microphone() as source:
+#         # st.info("Listening... Please speak into the microphone.")
+#         try:
+#             audio = recognizer.listen(source, timeout=10)
+#             text = recognizer.recognize_google(audio)
+#             # st.success(f"Recognized: {text}")
+#             return text
+#         except sr.UnknownValueError:
+#             st.error("Sorry, could not understand the audio.")
+#         except sr.RequestError as e:
+#             st.error(f"Could not request results; {e}")
+#         except Exception as e:
+#             st.error(f"An error occurred: {e}")
+#     return ""
 
 @st.cache_resource
 def init_snowflake_connection():
@@ -510,34 +510,34 @@ if st.session_state.initialized:
     # st.markdown('<div class="spacer" style="flex: 1;"></div>', unsafe_allow_html=True)
 
     # This empty element takes up available space
-    for _ in range(25):  # Adjust this number as needed
-      st.write("")
+    # for _ in range(25):  # Adjust this number as needed
+    #   st.write("")
     
-    input_container = st.container()
-    # Add audio input button
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        user_query = st.chat_input("Ask about OEE data")
-    with col2:
+    # input_container = st.container()
+    # # Add audio input button
+    # col1, col2 = st.columns([3, 1])
+    # with col1:
+    #     user_query = st.chat_input("Ask about OEE data")
+    # with col2:
        
-        if st.button("🎙️"):
-            audio_query = audio_to_text()
-            if audio_query:
-                user_query = audio_query
+    #     if st.button("🎙️"):
+    #         audio_query = audio_to_text()
+    #         if audio_query:
+    #             user_query = audio_query
 
 
-    if user_query:
-        st.session_state.has_started = True
-        st.session_state.selected_history_index = None
-        st.session_state.messages.append({"role": "user", "content": user_query})
-        if st.session_state.show_history:
-            st.session_state.chat_history.append({"role": "user", "content": user_query})
-    # if user_query := st.chat_input("Ask about OEE data"):
+    # if user_query:
     #     st.session_state.has_started = True
     #     st.session_state.selected_history_index = None
     #     st.session_state.messages.append({"role": "user", "content": user_query})
     #     if st.session_state.show_history:
     #         st.session_state.chat_history.append({"role": "user", "content": user_query})
+    if user_query := st.chat_input("Ask about OEE data"):
+        st.session_state.has_started = True
+        st.session_state.selected_history_index = None
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        if st.session_state.show_history:
+            st.session_state.chat_history.append({"role": "user", "content": user_query})
 
         with chat_container:
             with st.chat_message("user", avatar=user_avatar):
