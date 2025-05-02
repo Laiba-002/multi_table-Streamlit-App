@@ -48,4 +48,6 @@ packaging==24.2
 
 
 # # === For Audio Transcription ===
-speechrecognition Pyaudio
+# Core STT
+SpeechRecognition==3.10.0
+PyAudio==0.2.13

@@ -158,7 +158,7 @@ def decode_jwt_token(token):
 
         if isinstance(token, str):
             token = token.encode("utf-8")  # Convert string to bytes
-        # Decode the token (skipping verification for testing)
+        # Decode the token 
         decoded_token = jwt.decode(token, options={"verify_signature": False})
         logging.info(f"Decoded token: {decoded_token}")
 
