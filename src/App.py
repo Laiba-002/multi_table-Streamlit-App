@@ -21,6 +21,7 @@ from pathlib import Path
 import tiktoken
 import logging
 import jwt  # PyJWT
+import speech_recognition as sr
 
 # Configure logging
 logging.basicConfig(
@@ -220,6 +221,26 @@ def log_token_usage(nlp_tokens, table_tokens, viz_tokens):
     except Exception as e:
         logging.error(f"Error writing to token usage log: {str(e)}")
 
+
+
+def audio_to_text():
+    """Convert audio input to text using speech recognition."""
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        # st.info("Listening... Please speak into the microphone.")
+        try:
+            audio = recognizer.listen(source, timeout=10)
+            text = recognizer.recognize_google(audio)
+            # st.success(f"Recognized: {text}")
+            return text
+        except sr.UnknownValueError:
+            st.error("Sorry, could not understand the audio.")
+        except sr.RequestError as e:
+            st.error(f"Could not request results; {e}")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+    return ""
+
 @st.cache_resource
 def init_snowflake_connection():
     if st.session_state.snowflake_conn:
@@ -416,7 +437,7 @@ with st.sidebar:
                                     st.session_state.vector_stores[table_name] = initialize_vector_store(st.session_state.dfs[table_name].to_json(), table_name)  
                                 if all(st.session_state.vector_stores.values()):
                                     st.session_state.embedding_status = "Completed"
-                                    st.success("Embeddings loaded/created successfully!")
+                                    # st.success("Embeddings loaded/created successfully!")
                                 else:
                                     st.session_state.embedding_status = "Failed"
                                     st.warning("Embedding initialization failed.")
@@ -483,13 +504,40 @@ if st.session_state.initialized:
             if not st.session_state.has_started:
                 with st.chat_message("assistant", avatar=assistant_avatar):
                     st.write("Hi! How can I help you with OEE data?")
+    
+    
+    # This creates empty space that will fill the area between messages and input
+    # st.markdown('<div class="spacer" style="flex: 1;"></div>', unsafe_allow_html=True)
 
-    if user_query := st.chat_input("Ask about OEE data"):
+    # This empty element takes up available space
+    for _ in range(25):  # Adjust this number as needed
+      st.write("")
+    
+    input_container = st.container()
+    # Add audio input button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        user_query = st.chat_input("Ask about OEE data")
+    with col2:
+       
+        if st.button("🎙️"):
+            audio_query = audio_to_text()
+            if audio_query:
+                user_query = audio_query
+
+
+    if user_query:
         st.session_state.has_started = True
         st.session_state.selected_history_index = None
         st.session_state.messages.append({"role": "user", "content": user_query})
         if st.session_state.show_history:
             st.session_state.chat_history.append({"role": "user", "content": user_query})
+    # if user_query := st.chat_input("Ask about OEE data"):
+    #     st.session_state.has_started = True
+    #     st.session_state.selected_history_index = None
+    #     st.session_state.messages.append({"role": "user", "content": user_query})
+    #     if st.session_state.show_history:
+    #         st.session_state.chat_history.append({"role": "user", "content": user_query})
 
         with chat_container:
             with st.chat_message("user", avatar=user_avatar):
@@ -592,6 +640,8 @@ if st.session_state.initialized:
                     })
 
         st.rerun()
+    
+        
 else:
     st.info("Please connect to Snowflake to use the chatbot.")
 
