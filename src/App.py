@@ -21,7 +21,7 @@ from pathlib import Path
 import tiktoken
 import logging
 import jwt  # PyJWT
-# import speech_recognition as sr
+import uuid
 
 # Configure logging
 logging.basicConfig(
@@ -43,8 +43,8 @@ st.set_page_config(
     page_title="O3 Agent",
     page_icon="📊",
     layout="wide",
-    
 )
+
 # OpenAI client
 client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
 GPT_MODEL = "gpt-4o-mini"
@@ -56,9 +56,6 @@ if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'has_started' not in st.session_state:
     st.session_state.has_started = False
-# if 'user_code' not in st.session_state:
-    # st.session_state.user_id = 'A-1704902113649'  # replace with actual user ID
-    # st.session_state.plantcode = 'O-2372838648201'     
 if 'full_responses' not in st.session_state:
     st.session_state.full_responses = []
 if 'chat_history' not in st.session_state:
@@ -74,31 +71,21 @@ if 'show_history' not in st.session_state:
 if 'debug_mode' not in st.session_state:
     st.session_state.debug_mode = False
 if 'table_names' not in st.session_state:
-    st.session_state.table_names = ["OEESHIFTWISE_AI","MACHINE_ACCESS_INFO_AI"]  # Add your table names here
+    st.session_state.table_names = ["OEESHIFTWISE_AI", "MACHINE_ACCESS_INFO_AI"]
 if 'schema_columns' not in st.session_state:
     st.session_state.schema_columns = {}
 if 'selected_history_index' not in st.session_state:
     st.session_state.selected_history_index = None
 if 'user_code' not in st.session_state:
-    st.session_state.user_code = None    
+    st.session_state.user_code = None
 if 'snowflake_conn' not in st.session_state:
     st.session_state.snowflake_conn = None
-
 if 'table_metadata' not in st.session_state:
     st.session_state.table_metadata = {
         "OEESHIFTWISE_AI": {
             "description": "Shift-level OEE performance data",
             "key_columns": ["PUID", "ShiftStartTime", "ShiftEndTime"],
             "relationships": [
-                # {
-                #     "table": "OEEBREAKDOWNAI",
-                #     "join_keys": [
-                #         ("PUID", "PUID"),
-                #         ("ShiftStartTime", "ShiftStartTime"),
-                #         ("ShiftEndTime", "ShiftEndTime")
-                #     ],
-                #     # "join_type": "INNER JOIN"
-                # },
                 {
                     "table": "machine_access_info_ai",
                     "join_keys": [
@@ -108,19 +95,6 @@ if 'table_metadata' not in st.session_state:
                 }
             ]
         },
-        # "OEEBREAKDOWNAI": {
-        #     "description": "Breakdown and downtime data",
-        #     "key_columns": ["PUID", "ShiftStartTime", "ShiftEndTime"],
-        #     "relationships": [{
-        #         "table": "OEESHIFTWISE_AI",
-        #         "join_keys": [
-        #             ("PUID", "PUID"),
-        #             ("ShiftStartTime", "ShiftStartTime"),
-        #             ("ShiftEndTime", "ShiftEndTime")
-        #         ],
-        #         "join_type": "INNER JOIN"
-        #     }]
-        # },
         "machine_access_info_ai": {
             "description": "User-level machine and plant access info",
             "key_columns": ["PUID", "user_code", "Plantcode", "groupcode"],
@@ -137,44 +111,178 @@ if 'query_cache' not in st.session_state:
     st.session_state.query_cache = {}
 if "token" not in st.session_state:
     st.session_state.token = ""
+if 'history_loaded' not in st.session_state:
+    st.session_state.history_loaded = False
+if 'query_response_ids' not in st.session_state:
+    st.session_state.query_response_ids = []
+
 # Get query parameters using st.query_params
 query_params = st.query_params
-token = query_params.get("token", [None])  # Ensure token is a string or None
-# Store the token in session state if it exists
-st.session_state.token = token if token else None     # Always update session state
+token = query_params.get("token", [None])
+if token:
+    st.session_state.token = token
+
+# --- Snowflake Connection Function ---
+def init_snowflake_connection():
+    if st.session_state.snowflake_conn:
+        try:
+            cursor = st.session_state.snowflake_conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            return st.session_state.snowflake_conn
+        except (snowflake.connector.errors.DatabaseError, AttributeError):
+            st.session_state.snowflake_conn = None
+    try:
+        conn = snowflake.connector.connect(
+            user=st.secrets["snowflake"]["user"],
+            password=st.secrets["snowflake"]["password"],
+            account=st.secrets["snowflake"]["account"],
+            warehouse=st.secrets["snowflake"]["warehouse"],
+            database="O3_AI_DB",
+            schema="O3_AI_DB_SCHEMA"
+        )
+        st.session_state.snowflake_conn = conn
+        logging.info("Snowflake connection initialized")
+        return conn
+    except Exception as e:
+        st.error(f"Error connecting to Snowflake: {str(e)}")
+        logging.error(f"Snowflake connection error: {str(e)}")
+        return None
+
+# --- Snowflake Chat History Persistence Functions ---
+def load_chat_history_from_snowflake():
+    conn = init_snowflake_connection()
+    if not conn:
+        return
+    try:
+        cursor = conn.cursor()
+        select_query = """
+        SELECT QUERY_ID, RESPONSE_ID, QUERY_TEXT, RESPONSE_TEXT
+        FROM O3_AI_DB.O3_AI_DB_SCHEMA.AI_AGENT_QUERY_LOG
+        WHERE USER_CODE = %s
+        ORDER BY QUERY_ID
+        """
+        cursor.execute(select_query, (st.session_state.user_code,))
+        result = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        history_df = pd.DataFrame(result, columns=columns)
+
+        st.session_state.messages = []
+        st.session_state.full_responses = []
+        st.session_state.chat_history = []
+        st.session_state.query_response_ids = []
+        st.session_state.has_started = False
+
+        if not history_df.empty:
+            st.session_state.has_started = True
+            for _, row in history_df.iterrows():
+                query_id = row["QUERY_ID"]
+                response_id = row["RESPONSE_ID"]
+                query_text = row["QUERY_TEXT"]
+                response_text = row["RESPONSE_TEXT"]
+
+                st.session_state.messages.append({"role": "user", "content": query_text, "id": query_id})
+                if st.session_state.show_history:
+                    st.session_state.chat_history.append({"role": "user", "content": query_text, "id": query_id})
+                st.session_state.full_responses.append({
+                    "user_query": query_text,
+                    "query_id": query_id,
+                    "response_id": response_id,
+                    "text_response": response_text,
+                    "data": None,
+                    "visualization": None,
+                    "sql_query": None
+                })
+                st.session_state.query_response_ids.append({
+                    "query_id": query_id,
+                    "query": query_text,
+                    "response_id": response_id
+                })
+    except Exception as e:
+        st.warning(f"Failed to load chat history from Snowflake: {str(e)}")
+        logging.error(f"Chat history load error: {str(e)}")
+        st.session_state.messages = []
+        st.session_state.full_responses = []
+        st.session_state.chat_history = []
+        st.session_state.query_response_ids = []
+        st.session_state.has_started = False
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+
+def clear_chat_history_from_snowflake():
+    conn = init_snowflake_connection()
+    if not conn:
+        return
+    try:
+        cursor = conn.cursor()
+        delete_query_log_query = """
+        DELETE FROM O3_AI_DB.O3_AI_DB_SCHEMA.AI_AGENT_QUERY_LOG
+        WHERE USER_CODE = %s
+        """
+        cursor.execute(delete_query_log_query, (st.session_state.user_code,))
+        conn.commit()
+        cursor.close()
+        logging.info("Chat history cleared from Snowflake")
+    except Exception as e:
+        st.warning(f"Failed to clear chat history from Snowflake: {str(e)}")
+        logging.error(f"Clear chat history error: {str(e)}")
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+
+def insert_query_response_to_snowflake(query, query_id, response_id, response_text):
+    conn = init_snowflake_connection()
+    if not conn:
+        return
+    try:
+        cursor = conn.cursor()
+        insert_query = """
+        INSERT INTO O3_AI_DB.O3_AI_DB_SCHEMA.AI_AGENT_QUERY_LOG (
+            QUERY_ID, RESPONSE_ID, QUERY_TEXT, PLANT_CODE, USER_CODE, RESPONSE_TEXT
+        ) VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(insert_query, (
+            query_id,
+            response_id,
+            query,
+            st.session_state.plant_code,
+            st.session_state.user_code,
+            response_text
+        ))
+        conn.commit()
+        cursor.close()
+        logging.info(f"Query/response logged to Snowflake: query_id={query_id}")
+    except Exception as e:
+        st.warning(f"Failed to log query/response to Snowflake: {str(e)}")
+        logging.error(f"Query/response logging error: {str(e)}")
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
 
 def decode_jwt_token(token):
     try:
-        # Ensure token is not None and is a string or bytes
         if not token:
             logging.error("Token is missing or None.")
             return None, None, None
         logging.info(f"Token before decoding: {token}")
-
-        # Check if the token has three segments
         if len(token.split(".")) != 3:
             logging.error("Invalid token format: Not enough segments.")
             return None, None, None
-
         if isinstance(token, str):
-            token = token.encode("utf-8")  # Convert string to bytes
-        # Decode the token 
+            token = token.encode("utf-8")
         decoded_token = jwt.decode(token, options={"verify_signature": False})
         logging.info(f"Decoded token: {decoded_token}")
-
-        # Extract user information
         user_code = decoded_token.get("userCode")
         plant_code = decoded_token.get("plantCode")
         if not user_code or not plant_code:
             logging.error("Decoded token is missing userCode or plantCode.")
-        else:    
+        else:
             logging.info(f"Extracted user_code: {user_code}, plant_code: {plant_code}")
-
         return user_code, plant_code, decoded_token
     except Exception as e:
         logging.error(f"Error decoding JWT token: {str(e)}")
         return None, None, None
-
 
 def initialize_user_session():
     if 'user_code' not in st.session_state or 'plant_code' not in st.session_state:
@@ -183,20 +291,25 @@ def initialize_user_session():
         st.session_state.user_code = user_code
         st.session_state.plant_code = plant_code
         if user_code and plant_code:
-          st.session_state.user_authenticated = True 
-          st.session_state.user_info = decoded_token
-          logging.info(f"User authenticated: {user_code}, Plant: {plant_code}")    
+            st.session_state.user_authenticated = True
+            st.session_state.user_info = decoded_token
+            logging.info(f"User authenticated: {user_code}, Plant: {plant_code}")
         else:
             st.session_state.user_authenticated = False
             logging.error("User authentication failed. Invalid token.")
 
 def initialize_app():
-    # This function will be called when the app starts
     if 'user_authenticated' not in st.session_state:
-        initialize_user_session()  # From the code above
+        initialize_user_session()
 
 # Call initialization
-initialize_app()       
+initialize_app()
+
+# Load chat history from Snowflake on app start
+if not st.session_state.history_loaded and st.session_state.user_authenticated:
+    load_chat_history_from_snowflake()
+    st.session_state.history_loaded = True
+
 def count_tokens(text: str, model: str = "gpt-4o-mini") -> int:
     try:
         enc = tiktoken.encoding_for_model(model)
@@ -221,56 +334,10 @@ def log_token_usage(nlp_tokens, table_tokens, viz_tokens):
     except Exception as e:
         logging.error(f"Error writing to token usage log: {str(e)}")
 
-
-
-# def audio_to_text():
-#     """Convert audio input to text using speech recognition."""
-#     recognizer = sr.Recognizer()
-#     with sr.Microphone() as source:
-#         # st.info("Listening... Please speak into the microphone.")
-#         try:
-#             audio = recognizer.listen(source, timeout=10)
-#             text = recognizer.recognize_google(audio)
-#             # st.success(f"Recognized: {text}")
-#             return text
-#         except sr.UnknownValueError:
-#             st.error("Sorry, could not understand the audio.")
-#         except sr.RequestError as e:
-#             st.error(f"Could not request results; {e}")
-#         except Exception as e:
-#             st.error(f"An error occurred: {e}")
-#     return ""
-
-@st.cache_resource
-def init_snowflake_connection():
-    if st.session_state.snowflake_conn:
-        return st.session_state.snowflake_conn
-    try:
-        conn = snowflake.connector.connect(
-            user=st.secrets["snowflake"]["user"],
-            password=st.secrets["snowflake"]["password"],
-            account=st.secrets["snowflake"]["account"],
-            warehouse=st.secrets["snowflake"]["warehouse"],
-            database="O3_AI_DB",
-            schema="O3_AI_DB_SCHEMA"
-        )
-        st.session_state.snowflake_conn = conn
-        logging.info("Snowflake connection initialized")
-        return conn
-    except Exception as e:
-        st.error(f"Error connecting to Snowflake: {str(e)}")
-        logging.error(f"Snowflake connection error: {str(e)}")
-        return None
-
-# @st.cache_data(show_spinner=False, ttl=3600)
 def execute_snowflake_query(query):
     conn = init_snowflake_connection()
     if not conn:
         return None
-    # Add security check to ensure all queries filter by user access
-    # if "machine_access_info_ai" not in query.upper() and "WHERE" in query.upper() and st.session_state.user_code:
-    #     # Add appropriate access control to query
-        # query = query.replace("WHERE", f"WHERE machine_access_info_ai.user_code='{st.session_state.user_code}' AND machine_access_info_ai.Plantcode='{st.session_state.plant_code}' AND ")
     query_hash = hash(query)
     if query_hash in st.session_state.query_cache:
         logging.info(f"Cache hit for query: {query}")
@@ -291,6 +358,9 @@ def execute_snowflake_query(query):
         st.error("Error executing query. Please rephrase your question or try again later.")
         logging.error(f"Query execution error: {str(e)} - Query: {query}")
         return None
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def determine_visualization_type(user_query, sql_query, result_df_str):
@@ -421,11 +491,10 @@ with st.sidebar:
                 conn = init_snowflake_connection()
                 if conn:
                     with st.spinner("Fetching sample data..."):
-                        # Batch fetch sample data
                         cursor = conn.cursor()
                         try:
                             for table_name in st.session_state.table_names:
-                                sample_query = f"SELECT * FROM {table_name} limit 1000"
+                                sample_query = f"SELECT * FROM {table_name} LIMIT 1000"
                                 df = execute_snowflake_query(sample_query)
                                 if df is not None:
                                     st.session_state.dfs[table_name] = df
@@ -434,26 +503,41 @@ with st.sidebar:
                             with st.spinner("Checking embeddings..."):
                                 st.session_state.embedding_status = "In Progress"
                                 for table_name in st.session_state.table_names:
-                                    st.session_state.vector_stores[table_name] = initialize_vector_store(st.session_state.dfs[table_name].to_json(), table_name)  
+                                    st.session_state.vector_stores[table_name] = initialize_vector_store(st.session_state.dfs[table_name].to_json(), table_name)
                                 if all(st.session_state.vector_stores.values()):
                                     st.session_state.embedding_status = "Completed"
-                                    # st.success("Embeddings loaded/created successfully!")
                                 else:
                                     st.session_state.embedding_status = "Failed"
                                     st.warning("Embedding initialization failed.")
                         finally:
-                            cursor.close()
+                            if 'cursor' in locals():
+                                cursor.close()
         st.markdown("""
         <style>
         button[kind="secondary"] {
             background-color: transparent !important;
             border: none !important;
-            font-size: 12px !important;
+            font-size: 10px !important;
             color: #333 !important;
             padding: 2px 4px !important;
+            margin: -12px 0 !important;
+            text-align: left !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            width: 100% !important;
         }
         button[kind="secondary"]:hover {
             background-color: #f0f0f0 !important;
+        }
+        .stSidebar > div {
+            padding: 0 10px !important;
+        }
+        .stButton > button {
+            line-height: 1 !important;
+        }
+        .sidebar-content {
+            font-size: 10px !important;
         }
         </style>
         """, unsafe_allow_html=True)
@@ -462,7 +546,8 @@ with st.sidebar:
         st.text('Today')
         for i, resp in reversed(list(enumerate(st.session_state.full_responses))):
             query_preview = f"{resp['user_query'][:50]}{'...' if len(resp['user_query']) > 50 else ''}"
-            if st.sidebar.button(query_preview, key=f"history_btn_{i}"):
+            full_text = resp['user_query']
+            if st.sidebar.button(query_preview, key=f"history_btn_{i}", help=full_text):
                 st.session_state.selected_history_index = i
                 st.rerun()
         st.divider()
@@ -472,6 +557,10 @@ with st.sidebar:
             st.session_state.full_responses = []
             st.session_state.selected_history_index = None
             st.session_state.query_cache = {}
+            st.session_state.query_response_ids = []
+            st.session_state.has_started = False
+            st.session_state.history_loaded = False
+            clear_chat_history_from_snowflake()
             st.success("Chat history and cache cleared!")
             st.rerun()
     else:
@@ -504,153 +593,153 @@ if st.session_state.initialized:
             if not st.session_state.has_started:
                 with st.chat_message("assistant", avatar=assistant_avatar):
                     st.write("Hi! How can I help you with OEE data?")
-    
-    
-    # This creates empty space that will fill the area between messages and input
-    # st.markdown('<div class="spacer" style="flex: 1;"></div>', unsafe_allow_html=True)
 
-    # This empty element takes up available space
-    # for _ in range(25):  # Adjust this number as needed
-    #   st.write("")
-    
-    # input_container = st.container()
-    # # Add audio input button
-    # col1, col2 = st.columns([3, 1])
-    # with col1:
-    #     user_query = st.chat_input("Ask about OEE data")
-    # with col2:
-       
-    #     if st.button("🎙️"):
-    #         audio_query = audio_to_text()
-    #         if audio_query:
-    #             user_query = audio_query
-
-
-    # if user_query:
-    #     st.session_state.has_started = True
-    #     st.session_state.selected_history_index = None
-    #     st.session_state.messages.append({"role": "user", "content": user_query})
-    #     if st.session_state.show_history:
-    #         st.session_state.chat_history.append({"role": "user", "content": user_query})
     if user_query := st.chat_input("Ask about OEE data"):
-        st.session_state.has_started = True
-        st.session_state.selected_history_index = None
-        st.session_state.messages.append({"role": "user", "content": user_query})
-        if st.session_state.show_history:
-            st.session_state.chat_history.append({"role": "user", "content": user_query})
+        if not st.session_state.user_authenticated:
+            st.error("You don't have access to this data. Please verify your credentials.")
+        else:
+            st.session_state.has_started = True
+            st.session_state.selected_history_index = None
+            query_id = f"q-{uuid.uuid4()}"
+            response_id = f"r-{uuid.uuid4()}"
+            st.session_state.messages.append({"role": "user", "content": user_query, "id": query_id})
+            if st.session_state.show_history:
+                st.session_state.chat_history.append({"role": "user", "content": user_query, "id": query_id})
 
-        with chat_container:
-            with st.chat_message("user", avatar=user_avatar):
-                st.markdown(f"<div style='color: black;'>{user_query}</div>", unsafe_allow_html=True)
-            with st.spinner("Generating response..."):
-                # Infer user intent
-                intent = infer_user_intent(user_query, st.session_state.table_names)
-                logging.info(f"User query: {user_query}, Intent: {intent}")
+            with chat_container:
+                with st.chat_message("user", avatar=user_avatar):
+                    st.markdown(f"<div style='color: black;'>{user_query}</div>", unsafe_allow_html=True)
+                with st.spinner("Generating response..."):
+                    intent = infer_user_intent(user_query, st.session_state.table_names)
+                    logging.info(f"User query: {user_query}, Intent: {intent}")
 
-                column_info = {
-                    table_name: [
-                        (col, str(dtype)) for col, dtype in zip(
-                            st.session_state.schema_columns[table_name],
-                            st.session_state.dfs[table_name].dtypes
+                    column_info = {
+                        table_name: [
+                            (col, str(dtype)) for col, dtype in zip(
+                                st.session_state.schema_columns[table_name],
+                                st.session_state.dfs[table_name].dtypes
+                            )
+                        ] for table_name in st.session_state.dfs.keys()
+                    }
+                    conversation_history = st.session_state.chat_history if st.session_state.show_history else None
+
+                    if st.session_state.embedding_status == "Completed":
+                        rag_response = process_query_with_rag(
+                            user_query=user_query,
+                            vector_stores=st.session_state.vector_stores,
+                            table_names=intent["tables"],
+                            schema_name="O3_AI_DB_SCHEMA",
+                            database_name="O3_AI_DB",
+                            column_info=column_info,
+                            table_metadata=st.session_state.table_metadata,
+                            conversation_history=conversation_history
                         )
-                    ] for table_name in st.session_state.dfs.keys()
-                }
-                conversation_history = st.session_state.chat_history if st.session_state.show_history else None
 
-                if st.session_state.embedding_status == "Completed":
-                    rag_response = process_query_with_rag(
-                        user_query=user_query,
-                        vector_stores=st.session_state.vector_stores,
-                        table_names=intent["tables"],
-                        schema_name="O3_AI_DB_SCHEMA",
-                        database_name="O3_AI_DB",
-                        column_info=column_info,
-                        table_metadata=st.session_state.table_metadata,
-                        conversation_history=conversation_history
-                    )
+                        if "```sql" in rag_response:
+                            sql_query = rag_response.split("```sql")[1].split("```")[0].strip()
+                            result_df = execute_snowflake_query(sql_query)
+                            if result_df is not None and not result_df.empty:
+                                result_df_str = result_df.to_json(orient="records", indent=2)
+                                nlp_summary = generate_nlp_summary(user_query, sql_query, result_df_str)
+                                final_response = f"{nlp_summary}\n\nDetailed results:\n" if not st.session_state.debug_mode else \
+                                                f"SQL Query:\n```sql\n{sql_query}\n```\n{nlp_summary}\n\nDetailed results:\n"
+                                vis_recommendation = determine_visualization_type(user_query, sql_query, result_df_str)
+                                fig = create_visualization(result_df, vis_recommendation)
 
-                    if "```sql" in rag_response:
-                        sql_query = rag_response.split("```sql")[1].split("```")[0].strip()
-                        result_df = execute_snowflake_query(sql_query)
-                        if result_df is not None and not result_df.empty:
-                            result_df_str = result_df.to_json(orient="records", indent=2)
-                            nlp_summary = generate_nlp_summary(user_query, sql_query, result_df_str)
-                            final_response = f"{nlp_summary}\n\nDetailed results:\n" if not st.session_state.debug_mode else \
-                                            f"SQL Query:\n```sql\n{sql_query}\n```\n{nlp_summary}\n\nDetailed results:\n"
-                            vis_recommendation = determine_visualization_type(user_query, sql_query, result_df_str)
-                            fig = create_visualization(result_df, vis_recommendation)
+                                insert_query_response_to_snowflake(user_query, query_id, response_id, final_response)
 
-                            with st.chat_message("assistant", avatar=assistant_avatar):
-                                st.markdown(f"<div>{final_response}</div>", unsafe_allow_html=True)
-                                st.dataframe(result_df)
-                                if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
-                                    st.caption(f"Visualization notes: {vis_recommendation.get('description', '')}")
+                                with st.chat_message("assistant", avatar=assistant_avatar):
+                                    st.markdown(f"<div>{final_response}</div>", unsafe_allow_html=True)
+                                    st.dataframe(result_df)
+                                    if fig:
+                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.caption(f"Visualization notes: {vis_recommendation.get('description', '')}")
 
-                            st.session_state.messages.append({"role": "assistant", "content": final_response})
-                            st.session_state.full_responses.append({
-                                "user_query": user_query,
-                                "text_response": final_response,
-                                "data": result_df,
-                                "visualization": fig,
-                                "sql_query": sql_query if st.session_state.debug_mode else None
-                            })
-                            if st.session_state.show_history:
-                                st.session_state.chat_history.append({"role": "assistant", "content": final_response})
-                            log_token_usage(nlp_tokens, table_tokens, viz_tokens)
+                                st.session_state.messages.append({"role": "assistant", "content": final_response, "id": response_id})
+                                st.session_state.full_responses.append({
+                                    "user_query": user_query,
+                                    "query_id": query_id,
+                                    "response_id": response_id,
+                                    "text_response": final_response,
+                                    "data": result_df,
+                                    "visualization": fig,
+                                    "sql_query": sql_query if st.session_state.debug_mode else None
+                                })
+                                st.session_state.query_response_ids.append({
+                                    "query_id": query_id,
+                                    "query": user_query,
+                                    "response_id": response_id
+                                })
+                                if st.session_state.show_history:
+                                    st.session_state.chat_history.append({"role": "assistant", "content": final_response, "id": response_id})
+                                log_token_usage(nlp_tokens, table_tokens, viz_tokens)
+                            else:
+                                no_data_msg = "No results found. Please rephrase your question."
+                                insert_query_response_to_snowflake(user_query, query_id, response_id, no_data_msg)
+                                with st.chat_message("assistant", avatar=assistant_avatar):
+                                    st.warning(no_data_msg)
+                                st.session_state.messages.append({"role": "assistant", "content": no_data_msg, "id": response_id})
+                                st.session_state.full_responses.append({
+                                    "user_query": user_query,
+                                    "query_id": query_id,
+                                    "response_id": response_id,
+                                    "text_response": no_data_msg,
+                                    "data": None,
+                                    "visualization": None,
+                                    "sql_query": sql_query if st.session_state.debug_mode else None
+                                })
+                                st.session_state.query_response_ids.append({
+                                    "query_id": query_id,
+                                    "query": user_query,
+                                    "response_id": response_id
+                                })
                         else:
-                            no_data_msg = "No results found. Please rephrase your question."
+                            insert_query_response_to_snowflake(user_query, query_id, response_id, rag_response)
                             with st.chat_message("assistant", avatar=assistant_avatar):
-                                st.warning(no_data_msg)
-                            st.session_state.messages.append({"role": "assistant", "content": no_data_msg})
+                                st.markdown(f"<div>{rag_response}</div>", unsafe_allow_html=True)
+                            st.session_state.messages.append({"role": "assistant", "content": rag_response, "id": response_id})
                             st.session_state.full_responses.append({
                                 "user_query": user_query,
-                                "text_response": no_data_msg,
+                                "query_id": query_id,
+                                "response_id": response_id,
+                                "text_response": rag_response,
                                 "data": None,
                                 "visualization": None,
-                                "sql_query": sql_query if st.session_state.debug_mode else None
+                                "sql_query": None
+                            })
+                            st.session_state.query_response_ids.append({
+                                "query_id": query_id,
+                                "query": user_query,
+                                "response_id": response_id
                             })
                     else:
+                        llm_response = get_llm_response(
+                            user_query=user_query,
+                            table_name=", ".join(st.session_state.table_names),
+                            schema_name="O3_AI_DB",
+                            database_name="O3_AI_DB_SCHEMA",
+                            column_info=column_info,
+                            conversation_history=conversation_history
+                        )
+                        insert_query_response_to_snowflake(user_query, query_id, response_id, llm_response)
                         with st.chat_message("assistant", avatar=assistant_avatar):
-                            st.markdown(f"<div>{rag_response}</div>", unsafe_allow_html=True)
-                        st.session_state.messages.append({"role": "assistant", "content": rag_response})
+                            st.markdown(f"<div>{llm_response}</div>", unsafe_allow_html=True)
+                        st.session_state.messages.append({"role": "assistant", "content": llm_response, "id": response_id})
                         st.session_state.full_responses.append({
                             "user_query": user_query,
-                            "text_response": rag_response,
+                            "query_id": query_id,
+                            "response_id": response_id,
+                            "text_response": llm_response,
                             "data": None,
-                            "visualization": None
+                            "visualization": None,
+                            "sql_query": None
                         })
-                else:
-                    llm_response = get_llm_response(
-                        user_query=user_query,
-                        table_name=", ".join(st.session_state.table_names),
-                        schema_name="O3_AI_DB",
-                        database_name="O3_AI_DB_SCHEMA",
-                        column_info=column_info,
-                        conversation_history=conversation_history
-                    )
-                    with st.chat_message("assistant", avatar=assistant_avatar):
-                        st.markdown(f"<div>{llm_response}</div>", unsafe_allow_html=True)
-                    st.session_state.messages.append({"role": "assistant", "content": llm_response})
-                    st.session_state.full_responses.append({
-                        "user_query": user_query,
-                        "text_response": llm_response,
-                        "data": None,
-                        "visualization": None
-                    })
+                        st.session_state.query_response_ids.append({
+                            "query_id": query_id,
+                            "query": user_query,
+                            "response_id": response_id
+                        })
 
-        st.rerun()
-    
-        
+            st.rerun()
 else:
     st.info("Please connect to Snowflake to use the chatbot.")
-
-
-
-
-
-
-
-
-
-
