@@ -565,11 +565,15 @@ with st.sidebar:
             st.rerun()
     else:
         st.error("Snowflake credentials missing.")
-
 # Chat interface
 if st.session_state.initialized:
+    # Initialize current_session_responses if not present
+    if 'current_session_responses' not in st.session_state:
+        st.session_state.current_session_responses = []
+
     chat_container = st.container()
     with chat_container:
+        # Handle selected history item from sidebar
         if st.session_state.selected_history_index is not None:
             selected_response = st.session_state.full_responses[st.session_state.selected_history_index]
             with st.chat_message("user", avatar=user_avatar):
@@ -580,18 +584,22 @@ if st.session_state.initialized:
                     st.dataframe(selected_response["data"])
                 if selected_response.get("visualization") is not None:
                     st.plotly_chart(selected_response["visualization"], use_container_width=True)
-        elif not st.session_state.full_responses or st.session_state.selected_history_index is None:
-            # for idx, resp in enumerate(st.session_state.full_responses):
-            #     with st.chat_message("user", avatar=user_avatar):
-            #         st.markdown(f"<div style='color: black;'>{resp.get('user_query', '')}</div>", unsafe_allow_html=True)
-            #     with st.chat_message("assistant", avatar=assistant_avatar):
-            #         st.markdown(f"<div>{resp.get('text_response', '')}</div>", unsafe_allow_html=True)
-            #         if resp.get("data") is not None:
-            #             st.dataframe(resp["data"])
-            #         if resp.get("visualization") is not None:
-            #             st.plotly_chart(resp["visualization"], use_container_width=True)
-            with st.chat_message("assistant", avatar=assistant_avatar):
-                st.write("Hi! How can I help you with OEE data?")
+        else:
+            # Show default message if no current session conversation
+            if not st.session_state.current_session_responses:
+                with st.chat_message("assistant", avatar=assistant_avatar):
+                    st.write("Hi! How can I help you with OEE data?")
+            else:
+                # Display current session conversation
+                for response in st.session_state.current_session_responses:
+                    with st.chat_message("user", avatar=user_avatar):
+                        st.markdown(f"<div style='color: black;'>{response.get('user_query', '')}</div>", unsafe_allow_html=True)
+                    with st.chat_message("assistant", avatar=assistant_avatar):
+                        st.markdown(f"<div>{response.get('text_response', '')}</div>", unsafe_allow_html=True)
+                        if response.get("data") is not None:
+                            st.dataframe(response["data"])
+                        if response.get("visualization") is not None:
+                            st.plotly_chart(response["visualization"], use_container_width=True)
 
     if user_query := st.chat_input("Ask about OEE data"):
         if not st.session_state.user_authenticated:
@@ -654,8 +662,8 @@ if st.session_state.initialized:
                                         st.plotly_chart(fig, use_container_width=True)
                                         st.caption(f"Visualization notes: {vis_recommendation.get('description', '')}")
 
-                                st.session_state.messages.append({"role": "assistant", "content": final_response, "id": response_id})
-                                st.session_state.full_responses.append({
+                                # Append to both current session and full history
+                                response_data = {
                                     "user_query": user_query,
                                     "query_id": query_id,
                                     "response_id": response_id,
@@ -663,7 +671,10 @@ if st.session_state.initialized:
                                     "data": result_df,
                                     "visualization": fig,
                                     "sql_query": sql_query if st.session_state.debug_mode else None
-                                })
+                                }
+                                st.session_state.current_session_responses.append(response_data)
+                                st.session_state.full_responses.append(response_data)
+                                st.session_state.messages.append({"role": "assistant", "content": final_response, "id": response_id})
                                 st.session_state.query_response_ids.append({
                                     "query_id": query_id,
                                     "query": user_query,
@@ -677,8 +688,7 @@ if st.session_state.initialized:
                                 insert_query_response_to_snowflake(user_query, query_id, response_id, no_data_msg)
                                 with st.chat_message("assistant", avatar=assistant_avatar):
                                     st.warning(no_data_msg)
-                                st.session_state.messages.append({"role": "assistant", "content": no_data_msg, "id": response_id})
-                                st.session_state.full_responses.append({
+                                response_data = {
                                     "user_query": user_query,
                                     "query_id": query_id,
                                     "response_id": response_id,
@@ -686,7 +696,10 @@ if st.session_state.initialized:
                                     "data": None,
                                     "visualization": None,
                                     "sql_query": sql_query if st.session_state.debug_mode else None
-                                })
+                                }
+                                st.session_state.current_session_responses.append(response_data)
+                                st.session_state.full_responses.append(response_data)
+                                st.session_state.messages.append({"role": "assistant", "content": no_data_msg, "id": response_id})
                                 st.session_state.query_response_ids.append({
                                     "query_id": query_id,
                                     "query": user_query,
@@ -696,8 +709,7 @@ if st.session_state.initialized:
                             insert_query_response_to_snowflake(user_query, query_id, response_id, rag_response)
                             with st.chat_message("assistant", avatar=assistant_avatar):
                                 st.markdown(f"<div>{rag_response}</div>", unsafe_allow_html=True)
-                            st.session_state.messages.append({"role": "assistant", "content": rag_response, "id": response_id})
-                            st.session_state.full_responses.append({
+                            response_data = {
                                 "user_query": user_query,
                                 "query_id": query_id,
                                 "response_id": response_id,
@@ -705,7 +717,10 @@ if st.session_state.initialized:
                                 "data": None,
                                 "visualization": None,
                                 "sql_query": None
-                            })
+                            }
+                            st.session_state.current_session_responses.append(response_data)
+                            st.session_state.full_responses.append(response_data)
+                            st.session_state.messages.append({"role": "assistant", "content": rag_response, "id": response_id})
                             st.session_state.query_response_ids.append({
                                 "query_id": query_id,
                                 "query": user_query,
@@ -723,8 +738,7 @@ if st.session_state.initialized:
                         insert_query_response_to_snowflake(user_query, query_id, response_id, llm_response)
                         with st.chat_message("assistant", avatar=assistant_avatar):
                             st.markdown(f"<div>{llm_response}</div>", unsafe_allow_html=True)
-                        st.session_state.messages.append({"role": "assistant", "content": llm_response, "id": response_id})
-                        st.session_state.full_responses.append({
+                        response_data = {
                             "user_query": user_query,
                             "query_id": query_id,
                             "response_id": response_id,
@@ -732,13 +746,14 @@ if st.session_state.initialized:
                             "data": None,
                             "visualization": None,
                             "sql_query": None
-                        })
+                        }
+                        st.session_state.current_session_responses.append(response_data)
+                        st.session_state.full_responses.append(response_data)
+                        st.session_state.messages.append({"role": "assistant", "content": llm_response, "id": response_id})
                         st.session_state.query_response_ids.append({
                             "query_id": query_id,
                             "query": user_query,
                             "response_id": response_id
                         })
-
-            # st.rerun()
 else:
     st.info("Please connect to Snowflake to use the chatbot.")
