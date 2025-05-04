@@ -573,26 +573,25 @@ if st.session_state.initialized:
         if st.session_state.selected_history_index is not None:
             selected_response = st.session_state.full_responses[st.session_state.selected_history_index]
             with st.chat_message("user", avatar=user_avatar):
-                st.markdown(f"<div style='color: white;'>{selected_response.get('user_query', '')}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='color: black;'>{selected_response.get('user_query', '')}</div>", unsafe_allow_html=True)
             with st.chat_message("assistant", avatar=assistant_avatar):
                 st.markdown(f"<div>{selected_response.get('text_response', '')}</div>", unsafe_allow_html=True)
                 if selected_response.get("data") is not None:
                     st.dataframe(selected_response["data"])
                 if selected_response.get("visualization") is not None:
                     st.plotly_chart(selected_response["visualization"], use_container_width=True)
-        else:
-            for idx, resp in enumerate(st.session_state.full_responses):
-                with st.chat_message("user", avatar=user_avatar):
-                    st.markdown(f"<div style='color: black;'>{resp.get('user_query', '')}</div>", unsafe_allow_html=True)
-                with st.chat_message("assistant", avatar=assistant_avatar):
-                    st.markdown(f"<div>{resp.get('text_response', '')}</div>", unsafe_allow_html=True)
-                    if resp.get("data") is not None:
-                        st.dataframe(resp["data"])
-                    if resp.get("visualization") is not None:
-                        st.plotly_chart(resp["visualization"], use_container_width=True)
-            if not st.session_state.has_started:
-                with st.chat_message("assistant", avatar=assistant_avatar):
-                    st.write("Hi! How can I help you with OEE data?")
+        elif not st.session_state.full_responses or st.session_state.selected_history_index is None:
+            # for idx, resp in enumerate(st.session_state.full_responses):
+            #     with st.chat_message("user", avatar=user_avatar):
+            #         st.markdown(f"<div style='color: black;'>{resp.get('user_query', '')}</div>", unsafe_allow_html=True)
+            #     with st.chat_message("assistant", avatar=assistant_avatar):
+            #         st.markdown(f"<div>{resp.get('text_response', '')}</div>", unsafe_allow_html=True)
+            #         if resp.get("data") is not None:
+            #             st.dataframe(resp["data"])
+            #         if resp.get("visualization") is not None:
+            #             st.plotly_chart(resp["visualization"], use_container_width=True)
+            with st.chat_message("assistant", avatar=assistant_avatar):
+                st.write("Hi! How can I help you with OEE data?")
 
     if user_query := st.chat_input("Ask about OEE data"):
         if not st.session_state.user_authenticated:
@@ -740,6 +739,6 @@ if st.session_state.initialized:
                             "response_id": response_id
                         })
 
-            st.rerun()
+            # st.rerun()
 else:
     st.info("Please connect to Snowflake to use the chatbot.")
