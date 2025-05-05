@@ -49,8 +49,8 @@ packaging==24.2
 
 # # === For Audio Transcription ===
 # # Core STT
-SpeechRecognition==3.10.0
+# SpeechRecognition==3.10.0
 # # PyAudio is compatible in local running
-PyAudio==0.2.13
+# PyAudio==0.2.13
 # # PyAudio removed due to incompatibility in cloud
 # streamlit-webrtc==0.45.1
