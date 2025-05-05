@@ -3,7 +3,7 @@ import snowflake.connector
 import pandas as pd
 import numpy as np
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import json
 from io import StringIO
@@ -20,7 +20,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 import tiktoken
 import logging
-import jwt  # PyJWT
+import jwt
 import uuid
 
 # Configure logging
@@ -116,13 +116,13 @@ if 'history_loaded' not in st.session_state:
 if 'query_response_ids' not in st.session_state:
     st.session_state.query_response_ids = []
 
-# Get query parameters using st.query_params
+# Get query parameters
 query_params = st.query_params
 token = query_params.get("token", [None])
 if token:
     st.session_state.token = token
 
-# --- Snowflake Connection Function ---
+# Snowflake Connection Function
 def init_snowflake_connection():
     if st.session_state.snowflake_conn:
         try:
@@ -149,7 +149,7 @@ def init_snowflake_connection():
         logging.error(f"Snowflake connection error: {str(e)}")
         return None
 
-# --- Snowflake Chat History Persistence Functions ---
+# Snowflake Chat History Persistence Functions
 def load_chat_history_from_snowflake():
     conn = init_snowflake_connection()
     if not conn:
@@ -157,10 +157,10 @@ def load_chat_history_from_snowflake():
     try:
         cursor = conn.cursor()
         select_query = """
-        SELECT QUERY_ID, RESPONSE_ID, QUERY_TEXT, RESPONSE_TEXT
+        SELECT QUERY_ID, RESPONSE_ID, QUERY_TEXT, RESPONSE_TEXT, CREATED_AT
         FROM O3_AI_DB.O3_AI_DB_SCHEMA.AI_AGENT_QUERY_LOG
         WHERE USER_CODE = %s
-        ORDER BY QUERY_ID
+        ORDER BY CREATED_AT DESC
         """
         cursor.execute(select_query, (st.session_state.user_code,))
         result = cursor.fetchall()
@@ -180,10 +180,11 @@ def load_chat_history_from_snowflake():
                 response_id = row["RESPONSE_ID"]
                 query_text = row["QUERY_TEXT"]
                 response_text = row["RESPONSE_TEXT"]
+                created_at = pd.to_datetime(row["CREATED_AT"]).isoformat()  # Convert to ISO string
 
-                st.session_state.messages.append({"role": "user", "content": query_text, "id": query_id})
+                st.session_state.messages.append({"role": "user", "content": query_text, "id": query_id, "created_at": created_at})
                 if st.session_state.show_history:
-                    st.session_state.chat_history.append({"role": "user", "content": query_text, "id": query_id})
+                    st.session_state.chat_history.append({"role": "user", "content": query_text, "id": query_id, "created_at": created_at})
                 st.session_state.full_responses.append({
                     "user_query": query_text,
                     "query_id": query_id,
@@ -218,12 +219,13 @@ def clear_chat_history_from_snowflake():
         cursor = conn.cursor()
         delete_query_log_query = """
         DELETE FROM O3_AI_DB.O3_AI_DB_SCHEMA.AI_AGENT_QUERY_LOG
-        WHERE USER_CODE = %s
+        WHERE USER_CODE = %s AND PLANT_CODE = %s
         """
-        cursor.execute(delete_query_log_query, (st.session_state.user_code,))
+        cursor.execute(delete_query_log_query, (st.session_state.user_code, st.session_state.plant_code))
         conn.commit()
         cursor.close()
-        logging.info("Chat history cleared from Snowflake")
+        logging.info("Chat history cleared from Snowflake for user_code=%s and plant_code=%s", 
+                     st.session_state.user_code, st.session_state.plant_code)
     except Exception as e:
         st.warning(f"Failed to clear chat history from Snowflake: {str(e)}")
         logging.error(f"Clear chat history error: {str(e)}")
@@ -503,15 +505,15 @@ with st.sidebar:
                             with st.spinner("Checking embeddings..."):
                                 st.session_state.embedding_status = "In Progress"
                                 for table_name in st.session_state.table_names:
-                                    st.session_state.vector_stores[table_name] = initialize_vector_store(st.session_state.dfs[table_name].to_json(), table_name)
-                                if all(st.session_state.vector_stores.values()):
-                                    st.session_state.embedding_status = "Completed"
-                                else:
-                                    st.session_state.embedding_status = "Failed"
-                                    st.warning("Embedding initialization failed.")
+                                    st.session_state.vector_stores[table_name] = initialize_vector_store(
+                                        st.session_state.dfs[table_name].to_json(), table_name)
+                                st.session_state.embedding_status = (
+                                    "Completed" if all(st.session_state.vector_stores.values()) else "Failed"
+                                )
                         finally:
                             if 'cursor' in locals():
                                 cursor.close()
+
         st.markdown("""
         <style>
         button[kind="secondary"] {
@@ -535,6 +537,8 @@ with st.sidebar:
         }
         .stButton > button {
             line-height: 1 !important;
+            width: 100% !important;
+            color: #f12c0d !important;
         }
         .sidebar-content {
             font-size: 10px !important;
@@ -543,18 +547,53 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
         st.header("Chat History")
-        st.text('Today')
-        for i, resp in reversed(list(enumerate(st.session_state.full_responses))):
-            query_preview = f"{resp['user_query'][:50]}{'...' if len(resp['user_query']) > 50 else ''}"
-            full_text = resp['user_query']
-            if st.sidebar.button(query_preview, key=f"history_btn_{i}", help=full_text):
-                st.session_state.selected_history_index = i
-                st.rerun()
+        
+        # Display chat history from session state
+        if st.session_state.chat_history:
+            # Create a DataFrame from chat_history for easier manipulation
+            history_data = []
+            for item in st.session_state.chat_history:
+                if item['role'] == 'user':  # Only show user queries in sidebar
+                    history_data.append({
+                        'QUERY_ID': item['id'],
+                        'QUERY_TEXT': item['content'],
+                        'CREATED_AT': pd.to_datetime(item.get('created_at', datetime.now()))
+                    })
+            if history_data:
+                history_df = pd.DataFrame(history_data)
+                history_df['DATE'] = history_df['CREATED_AT'].dt.date
+                today = datetime.now().date()
+                yesterday = today - timedelta(days=1)
+
+                grouped_history = history_df.groupby('DATE').apply(
+                    lambda x: x.sort_values('CREATED_AT', ascending=False)
+                ).reset_index(drop=True)
+                unique_dates = sorted(grouped_history['DATE'].unique(), reverse=True)
+
+                for date in unique_dates:
+                    date_str = "Today" if date == today else "Yesterday" if date == yesterday else date.strftime("%Y-%m-%d")
+                    st.markdown(f"**{date_str}**")
+                    date_df = grouped_history[grouped_history['DATE'] == date]
+
+                    for _, row in date_df.iterrows():
+                        query_words = row['QUERY_TEXT'].split()[:5]
+                        query_preview = " ".join(query_words) + ("..." if len(row['QUERY_TEXT'].split()) > 5 else "")
+                        full_text = row['QUERY_TEXT']
+                        try:
+                            idx = next(idx for idx, resp in enumerate(st.session_state.full_responses)
+                                       if resp['query_id'] == row['QUERY_ID'])
+                            if st.button(query_preview, key=f"history_btn_{idx}_{row['QUERY_ID']}", help=full_text):
+                                st.session_state.selected_history_index = idx
+                                st.rerun()
+                        except StopIteration:
+                            logging.warning(f"Query ID {row['QUERY_ID']} not found in full_responses")
+                            continue
         st.divider()
         if st.button("Clear Chat History"):
             st.session_state.messages = []
             st.session_state.chat_history = []
             st.session_state.full_responses = []
+            st.session_state.current_session_responses = []
             st.session_state.selected_history_index = None
             st.session_state.query_cache = {}
             st.session_state.query_response_ids = []
@@ -565,15 +604,14 @@ with st.sidebar:
             st.rerun()
     else:
         st.error("Snowflake credentials missing.")
+
 # Chat interface
 if st.session_state.initialized:
-    # Initialize current_session_responses if not present
     if 'current_session_responses' not in st.session_state:
         st.session_state.current_session_responses = []
 
     chat_container = st.container()
     with chat_container:
-        # Handle selected history item from sidebar
         if st.session_state.selected_history_index is not None:
             selected_response = st.session_state.full_responses[st.session_state.selected_history_index]
             with st.chat_message("user", avatar=user_avatar):
@@ -585,12 +623,10 @@ if st.session_state.initialized:
                 if selected_response.get("visualization") is not None:
                     st.plotly_chart(selected_response["visualization"], use_container_width=True)
         else:
-            # Show default message if no current session conversation
             if not st.session_state.current_session_responses:
                 with st.chat_message("assistant", avatar=assistant_avatar):
                     st.write("Hi! How can I help you with OEE data?")
             else:
-                # Display current session conversation
                 for response in st.session_state.current_session_responses:
                     with st.chat_message("user", avatar=user_avatar):
                         st.markdown(f"<div style='color: black;'>{response.get('user_query', '')}</div>", unsafe_allow_html=True)
@@ -609,9 +645,11 @@ if st.session_state.initialized:
             st.session_state.selected_history_index = None
             query_id = f"q-{uuid.uuid4()}"
             response_id = f"r-{uuid.uuid4()}"
-            st.session_state.messages.append({"role": "user", "content": user_query, "id": query_id})
+            current_time = datetime.now().isoformat()  # Store as ISO string
+
+            st.session_state.messages.append({"role": "user", "content": user_query, "id": query_id, "created_at": current_time})
             if st.session_state.show_history:
-                st.session_state.chat_history.append({"role": "user", "content": user_query, "id": query_id})
+                st.session_state.chat_history.append({"role": "user", "content": user_query, "id": query_id, "created_at": current_time})
 
             with chat_container:
                 with st.chat_message("user", avatar=user_avatar):
@@ -628,7 +666,11 @@ if st.session_state.initialized:
                             )
                         ] for table_name in st.session_state.dfs.keys()
                     }
-                    conversation_history = st.session_state.chat_history if st.session_state.show_history else None
+                    # Prepare conversation history without non-serializable objects
+                    conversation_history = [
+                        {"role": item["role"], "content": item["content"], "id": item["id"]}
+                        for item in st.session_state.chat_history
+                    ] if st.session_state.show_history else None
 
                     if st.session_state.embedding_status == "Completed":
                         rag_response = process_query_with_rag(
@@ -662,7 +704,6 @@ if st.session_state.initialized:
                                         st.plotly_chart(fig, use_container_width=True)
                                         st.caption(f"Visualization notes: {vis_recommendation.get('description', '')}")
 
-                                # Append to both current session and full history
                                 response_data = {
                                     "user_query": user_query,
                                     "query_id": query_id,
@@ -674,18 +715,19 @@ if st.session_state.initialized:
                                 }
                                 st.session_state.current_session_responses.append(response_data)
                                 st.session_state.full_responses.append(response_data)
-                                st.session_state.messages.append({"role": "assistant", "content": final_response, "id": response_id})
+                                st.session_state.messages.append({"role": "assistant", "content": final_response, "id": response_id, "created_at": current_time})
                                 st.session_state.query_response_ids.append({
                                     "query_id": query_id,
                                     "query": user_query,
                                     "response_id": response_id
                                 })
                                 if st.session_state.show_history:
-                                    st.session_state.chat_history.append({"role": "assistant", "content": final_response, "id": response_id})
+                                    st.session_state.chat_history.append({"role": "assistant", "content": final_response, "id": response_id, "created_at": current_time})
                                 log_token_usage(nlp_tokens, table_tokens, viz_tokens)
                             else:
                                 no_data_msg = "No results found. Please rephrase your question."
                                 insert_query_response_to_snowflake(user_query, query_id, response_id, no_data_msg)
+
                                 with st.chat_message("assistant", avatar=assistant_avatar):
                                     st.warning(no_data_msg)
                                 response_data = {
@@ -699,7 +741,7 @@ if st.session_state.initialized:
                                 }
                                 st.session_state.current_session_responses.append(response_data)
                                 st.session_state.full_responses.append(response_data)
-                                st.session_state.messages.append({"role": "assistant", "content": no_data_msg, "id": response_id})
+                                st.session_state.messages.append({"role": "assistant", "content": no_data_msg, "id": response_id, "created_at": current_time})
                                 st.session_state.query_response_ids.append({
                                     "query_id": query_id,
                                     "query": user_query,
@@ -707,6 +749,7 @@ if st.session_state.initialized:
                                 })
                         else:
                             insert_query_response_to_snowflake(user_query, query_id, response_id, rag_response)
+
                             with st.chat_message("assistant", avatar=assistant_avatar):
                                 st.markdown(f"<div>{rag_response}</div>", unsafe_allow_html=True)
                             response_data = {
@@ -720,7 +763,7 @@ if st.session_state.initialized:
                             }
                             st.session_state.current_session_responses.append(response_data)
                             st.session_state.full_responses.append(response_data)
-                            st.session_state.messages.append({"role": "assistant", "content": rag_response, "id": response_id})
+                            st.session_state.messages.append({"role": "assistant", "content": rag_response, "id": response_id, "created_at": current_time})
                             st.session_state.query_response_ids.append({
                                 "query_id": query_id,
                                 "query": user_query,
@@ -736,6 +779,7 @@ if st.session_state.initialized:
                             conversation_history=conversation_history
                         )
                         insert_query_response_to_snowflake(user_query, query_id, response_id, llm_response)
+
                         with st.chat_message("assistant", avatar=assistant_avatar):
                             st.markdown(f"<div>{llm_response}</div>", unsafe_allow_html=True)
                         response_data = {
@@ -749,11 +793,12 @@ if st.session_state.initialized:
                         }
                         st.session_state.current_session_responses.append(response_data)
                         st.session_state.full_responses.append(response_data)
-                        st.session_state.messages.append({"role": "assistant", "content": llm_response, "id": response_id})
+                        st.session_state.messages.append({"role": "assistant", "content": llm_response, "id": response_id, "created_at": current_time})
                         st.session_state.query_response_ids.append({
                             "query_id": query_id,
                             "query": user_query,
                             "response_id": response_id
                         })
+            st.rerun()  
 else:
     st.info("Please connect to Snowflake to use the chatbot.")
