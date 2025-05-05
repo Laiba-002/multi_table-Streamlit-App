@@ -529,16 +529,14 @@ with st.sidebar:
             text-overflow: ellipsis !important;
             width: 100% !important;
         }
-        button[kind="secondary"]:hover {
-            background-color: #f0f0f0 !important;
-        }
         .stSidebar > div {
             padding: 0 10px !important;
         }
         .stButton > button {
             line-height: 1 !important;
             width: 100% !important;
-            color: #f12c0d !important;
+            color: #fbfcfc !important;
+            background-color: #101112 !important;
         }
         .sidebar-content {
             font-size: 10px !important;
@@ -546,7 +544,23 @@ with st.sidebar:
         </style>
         """, unsafe_allow_html=True)
 
-        st.header("Chat History")
+
+        st.markdown("""
+    <style>
+        .custom-header {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333; /* Green color */
+            text-align: left;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 6px;
+            margin-top:-35px !important; 
+            width:150px !important;               
+        }
+    </style>
+    <div class="custom-header">Chat History</div>
+""", unsafe_allow_html=True)
         
         # Display chat history from session state
         if st.session_state.chat_history:
