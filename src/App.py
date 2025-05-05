@@ -22,6 +22,7 @@ import tiktoken
 import logging
 import jwt
 import uuid
+import speech_recognition as sr
 
 # Configure logging
 logging.basicConfig(
@@ -122,6 +123,22 @@ token = query_params.get("token", [None])
 if token:
     st.session_state.token = token
 
+def audio_to_text():
+    """Convert audio input to text using speech recognition."""
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        try:
+            audio = recognizer.listen(source, timeout=10)
+            text = recognizer.recognize_google(audio)
+            return text
+        except sr.UnknownValueError:
+            st.error("Sorry, could not understand the audio.")
+        except sr.RequestError as e:
+            st.error(f"Could not request results; {e}")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+    return ""
+
 # Snowflake Connection Function
 def init_snowflake_connection():
     if st.session_state.snowflake_conn:
@@ -180,7 +197,7 @@ def load_chat_history_from_snowflake():
                 response_id = row["RESPONSE_ID"]
                 query_text = row["QUERY_TEXT"]
                 response_text = row["RESPONSE_TEXT"]
-                created_at = pd.to_datetime(row["CREATED_AT"]).isoformat()  # Convert to ISO string
+                created_at = pd.to_datetime(row["CREATED_AT"]).isoformat()
 
                 st.session_state.messages.append({"role": "user", "content": query_text, "id": query_id, "created_at": created_at})
                 if st.session_state.show_history:
@@ -224,7 +241,7 @@ def clear_chat_history_from_snowflake():
         cursor.execute(delete_query_log_query, (st.session_state.user_code, st.session_state.plant_code))
         conn.commit()
         cursor.close()
-        logging.info("Chat history cleared from Snowflake for user_code=%s and plant_code=%s", 
+        logging.info("Chat history cleared from Snowflake for user_code=%s and plant_code=%s",
                      st.session_state.user_code, st.session_state.plant_code)
     except Exception as e:
         st.warning(f"Failed to clear chat history from Snowflake: {str(e)}")
@@ -512,38 +529,52 @@ with st.sidebar:
                                 )
                         finally:
                             if 'cursor' in locals():
-                                cursor.close()
+                              cursor.close()
 
         st.markdown("""
-        <style>
-        button[kind="secondary"] {
-            background-color: transparent !important;
-            border: none !important;
-            font-size: 10px !important;
-            color: #333 !important;
-            padding: 2px 4px !important;
-            margin: -12px 0 !important;
-            text-align: left !important;
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-            width: 100% !important;
-        }
-       
-        .stSidebar > div {
-            padding: 0 10px !important;
-        }
-        .stButton > button {
-            line-height: 1 !important;
-            width: 100% !important;
-            color: #fbfcfc !important;
-            background-color:#101112 !important;
-        }
-        .sidebar-content {
-            font-size: 10px !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+    <style>
+    /* Target buttons specifically in the sidebar */
+    .stSidebar button[kind="secondary"] {
+        background-color: transparent !important;
+        border: none !important;
+        font-size: 10px !important;
+        color: #333 !important;
+        padding: 2px 4px !important;
+        margin: -12px 0 !important;
+        text-align: left !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        width: 100% !important;
+    }
+
+    .stSidebar > div {
+        padding: 0 10px !important;
+    }
+
+    /* Style sidebar buttons */
+    .stSidebar .stButton > button {
+        line-height: 1 !important;
+        width: 100% !important;
+        color: #fbfcfc !important;
+        background-color: #101112 !important;
+    }
+
+    .sidebar-content {
+        font-size: 10px !important;
+    }
+
+    /* Ensure microphone button retains default Streamlit styling */
+    .stButton.microphone-btn > button {
+        background-color: #f0f2f6 !important;
+        color: #262730 !important;
+        border: 1px solid #d3d3d3 !important;
+        font-size: 14px !important;
+        padding: 8px 16px !important;
+        width: auto !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
         st.markdown("""
     <style>
@@ -555,19 +586,17 @@ with st.sidebar:
             text-align: left;
             margin-bottom: 20px;
             border-bottom: 1px solid #333;
-            padding-bottom: 10px;
+            padding-bottom: 7px;
+            width:150px !important;        
         }
     </style>
     <div class="custom-header">Chat History</div>
 """, unsafe_allow_html=True)
-        # st.header("Chat History")
-        
-        # Display chat history from session state
+
         if st.session_state.chat_history:
-            # Create a DataFrame from chat_history for easier manipulation
             history_data = []
             for item in st.session_state.chat_history:
-                if item['role'] == 'user':  # Only show user queries in sidebar
+                if item['role'] == 'user':
                     history_data.append({
                         'QUERY_ID': item['id'],
                         'QUERY_TEXT': item['content'],
@@ -651,7 +680,20 @@ if st.session_state.initialized:
                         if response.get("visualization") is not None:
                             st.plotly_chart(response["visualization"], use_container_width=True)
 
-    if user_query := st.chat_input("Ask about OEE data"):
+    st.markdown('<div class="spacer" style="flex: 1;"></div>', unsafe_allow_html=True)
+
+    for _ in range(25):
+        st.write("")
+
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        user_query = st.chat_input("Ask about OEE data")
+    with col2:
+        if st.button("🎙️"):
+            audio_query = audio_to_text()
+            if audio_query:
+                user_query = audio_query
+    if user_query:
         if not st.session_state.user_authenticated:
             st.error("You don't have access to this data. Please verify your credentials.")
         else:
@@ -659,7 +701,7 @@ if st.session_state.initialized:
             st.session_state.selected_history_index = None
             query_id = f"q-{uuid.uuid4()}"
             response_id = f"r-{uuid.uuid4()}"
-            current_time = datetime.now().isoformat()  # Store as ISO string
+            current_time = datetime.now().isoformat()
 
             st.session_state.messages.append({"role": "user", "content": user_query, "id": query_id, "created_at": current_time})
             if st.session_state.show_history:
@@ -680,9 +722,8 @@ if st.session_state.initialized:
                             )
                         ] for table_name in st.session_state.dfs.keys()
                     }
-                    # Prepare conversation history without non-serializable objects
                     conversation_history = [
-                        {"role": item["role"], "content": item["content"], "id": item["id"]}
+                        {"role": item["role"], "content": item["content"], "id": item.get("id", f"temp-{uuid.uuid4()}")}
                         for item in st.session_state.chat_history
                     ] if st.session_state.show_history else None
 
@@ -813,6 +854,6 @@ if st.session_state.initialized:
                             "query": user_query,
                             "response_id": response_id
                         })
-            st.rerun()  
+            st.rerun()
 else:
     st.info("Please connect to Snowflake to use the chatbot.")
