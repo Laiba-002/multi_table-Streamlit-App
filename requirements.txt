@@ -41,7 +41,7 @@ joblib==1.4.2
 tenacity==9.0.0
 typing_extensions==4.13.0
 packaging==24.2
-pydub==0.25.1
+pydub>=0.25.1
 audio-recorder-streamlit==0.0.10  
 # # === Only if needed ===
 # markdown-it-py==3.0.0
