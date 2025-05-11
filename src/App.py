@@ -5,6 +5,7 @@ import numpy as np
 import os
 from datetime import datetime, timedelta
 import re
+from datetime import datetime
 import json
 from io import StringIO
 from prompts import generate_introduction, get_llm_response, call_openai
@@ -23,10 +24,10 @@ import logging
 import jwt
 import uuid
 import tempfile  # Added for temporary file handling
-from audio_recorder_streamlit import audio_recorder  # Added for voice recording
+# from audio_recorder_streamlit import audio_recorder  # Added for voice recording
 import streamlit.components.v1 as components  # Added for custom HTML components
-from pydub import AudioSegment
-from pydub.silence import detect_nonsilent
+# from pydub import AudioSegment
+# from pydub.silence import detect_nonsilent
 import os
 # Configure logging
 logging.basicConfig(
@@ -124,8 +125,9 @@ if 'transcribed_query' not in st.session_state:
     st.session_state.transcribed_query = None
 if 'query_processed' not in st.session_state:
     st.session_state.query_processed = False
-
+current_time = datetime.now().isoformat()
 # Get query parameters
+
 query_params = st.query_params
 token = query_params.get("token", [None])
 if token:
@@ -346,39 +348,39 @@ def log_token_usage(nlp_tokens, table_tokens, viz_tokens):
         logging.error(f"Error writing to token usage log: {str(e)}")
 
 # Speech-to-Text Function
-def speech_to_text(audio_bytes):
-    """Convert audio bytes to text using OpenAI Whisper."""
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
-            temp_audio.write(audio_bytes)
-            temp_audio_path = temp_audio.name
+# def speech_to_text(audio_bytes):
+#     """Convert audio bytes to text using OpenAI Whisper."""
+#     try:
+#         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+#             temp_audio.write(audio_bytes)
+#             temp_audio_path = temp_audio.name
 
-            audio = AudioSegment.from_file(temp_audio_path, format="wav")
-        # Detect non-silent parts (in milliseconds)
-            nonsilent_parts = detect_nonsilent(audio, min_silence_len=500, silence_thresh=-40)
+#             audio = AudioSegment.from_file(temp_audio_path, format="wav")
+#         # Detect non-silent parts (in milliseconds)
+#             nonsilent_parts = detect_nonsilent(audio, min_silence_len=500, silence_thresh=-40)
 
-            if not nonsilent_parts or len(audio) < 1000:  # Less than 1 second
-              os.remove(temp_audio_path)
-              st.warning("No speech detected in the audio. Please speak clearly and try again.")
-              return None
+#             if not nonsilent_parts or len(audio) < 1000:  # Less than 1 second
+#               os.remove(temp_audio_path)
+#               st.warning("No speech detected in the audio. Please speak clearly and try again.")
+#               return None
         
-        # If no non-silent parts or audio is too short, skip processing
-        if not nonsilent_parts or len(audio) < 1000:  # Less than 1 second
-            os.remove(temp_audio_path)
-            st.warning("No speech detected in the audio. Please speak clearly and try again.")
-            return None
-        with open(temp_audio_path, "rb") as audio_file:
-            transcript = client.audio.transcriptions.create(
-                model="whisper-1",
-                response_format="text",
-                file=audio_file,
-                language="en"
-            )
-        os.remove(temp_audio_path)
-        return transcript
-    except Exception as e:
-        st.error(f"Error in transcription: {e}")
-        return None
+#         # If no non-silent parts or audio is too short, skip processing
+#         if not nonsilent_parts or len(audio) < 1000:  # Less than 1 second
+#             os.remove(temp_audio_path)
+#             st.warning("No speech detected in the audio. Please speak clearly and try again.")
+#             return None
+#         with open(temp_audio_path, "rb") as audio_file:
+#             transcript = client.audio.transcriptions.create(
+#                 model="whisper-1",
+#                 response_format="text",
+#                 file=audio_file,
+#                 language="en"
+#             )
+#         os.remove(temp_audio_path)
+#         return transcript
+#     except Exception as e:
+#         st.error(f"Error in transcription: {e}")
+#         return None
 
 def execute_snowflake_query(query):
     conn = init_snowflake_connection()
@@ -626,8 +628,16 @@ with st.sidebar:
         }
     iframe.stCustomComponentV1.st-emotion-cache-1tvzk6f.e1begtbc0 button {
             background-color: rgb(243 243 243) !important;
+            border: None !important;
+            outline:None !important;
           
         }
+     iframe.stCustomComponentV1.st-emotion-cache-1tvzk6f.e1begtbc0 button:focus,
+        iframe.stCustomComponentV1.st-emotion-cache-1tvzk6f.e1begtbc0 button:active {
+            border: none !important; /* Remove border on click */
+            outline: none !important; /* Remove outline on click */
+            box-shadow: none !important; /* Remove any shadow */
+        }    
     </style>
     """,
     unsafe_allow_html=True
@@ -692,11 +702,12 @@ with st.sidebar:
 
 # Chat interface
 if st.session_state.initialized:
+    # Initialize current_session_responses if not present
     if 'current_session_responses' not in st.session_state:
         st.session_state.current_session_responses = []
-
     chat_container = st.container()
     with chat_container:
+        # Handle selected history item from sidebar
         if st.session_state.selected_history_index is not None:
             selected_response = st.session_state.full_responses[st.session_state.selected_history_index]
             with st.chat_message("user", avatar=user_avatar):
@@ -708,10 +719,12 @@ if st.session_state.initialized:
                 if selected_response.get("visualization") is not None:
                     st.plotly_chart(selected_response["visualization"], use_container_width=True)
         else:
+            # Show default message if no current session conversation
             if not st.session_state.current_session_responses:
                 with st.chat_message("assistant", avatar=assistant_avatar):
                     st.write("Hi! How can I help you with OEE data?")
             else:
+                # Display current session conversation
                 for response in st.session_state.current_session_responses:
                     with st.chat_message("user", avatar=user_avatar):
                         st.markdown(f"<div style='color: black;'>{response.get('user_query', '')}</div>", unsafe_allow_html=True)
@@ -721,107 +734,23 @@ if st.session_state.initialized:
                             st.dataframe(response["data"])
                         if response.get("visualization") is not None:
                             st.plotly_chart(response["visualization"], use_container_width=True)
-
-    # --- User Input Handling ---
-
-    st.markdown("""
-    <style>
-    div[data-testid="stChatInput"] button {
-        padding-right:50px;
-    }
-    div[data-testid="stChatInput"] {
-      
-        border-radius: 20px !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-        border: 1px solid #d3d3d3 !important;
-        position:relative !important; 
-                      
-    }
-    div[data-testid="stChatInput"] textarea {
-        background-color: transparent !important;
-        color: #333 !important;
-        font-size: 16px !important;
-        position:absolute !important;        
-    }
-    div[data-testid="stChatInput"] textarea::placeholder {
-        color: #888 !important;
-    }
-    
-
-    </style>
-    """, unsafe_allow_html=True)
-
-   
-
-    with st.container():
-        st.markdown('<div style="position: relative;">', unsafe_allow_html=True)
-        user_query = st.chat_input("Ask about OEE data", key="chat_input")
-
-        audio_bytes = audio_recorder(
-            text="",
-            pause_threshold=3.0,
-            icon_size="1x",
-            key=f"audio_recorder_{len(st.session_state.messages)}"
-        )
-
-        components.html(
-            """
-            <script>
-            document.querySelector('div[data-testid=\"stAudioRecorder\"] button').addEventListener('mousedown', function() {
-                document.getElementById('voiceButton');
-            });
-            document.querySelector('div[data-testid=\"stAudioRecorder\"] button').addEventListener('mouseup', function() {
-                document.getElementById('voiceButton');
-            });
-            function clearChatInput() {
-                const textarea = document.querySelector('div[data-testid=\"stChatInput\"] textarea');
-                if (textarea) {
-                    textarea.value = '';
-                    const inputEvent = new Event('input', { bubbles: true });
-                    textarea.dispatchEvent(inputEvent);
-                }
-            }
-            setTimeout(clearChatInput, 100);
-            </script>
-            """,
-            height=100
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Process audio input if recorded
-    if audio_bytes and not st.session_state.query_processed:
-        with st.spinner("Transcribing audio..."):
-            transcript = speech_to_text(audio_bytes)
-            if transcript:
-                st.session_state.transcribed_query = transcript
-                user_query = transcript
-
-    # Handle query submission
-    if (user_query or st.session_state.transcribed_query) and not st.session_state.query_processed:
+    if user_query := st.chat_input("Ask about OEE data"):
         if not st.session_state.user_authenticated:
             st.error("You don't have access to this data. Please verify your credentials.")
         else:
-            query_to_process = user_query if user_query else st.session_state.transcribed_query
-            st.session_state.query_processed = True
-
             st.session_state.has_started = True
             st.session_state.selected_history_index = None
             query_id = f"q-{uuid.uuid4()}"
             response_id = f"r-{uuid.uuid4()}"
-            current_time = datetime.now().isoformat()
-
-            st.session_state.messages.append({"role": "user", "content": query_to_process, "id": query_id, "created_at": current_time})
+            st.session_state.messages.append({"role": "user", "content": user_query, "id": query_id})
             if st.session_state.show_history:
-                st.session_state.chat_history.append({"role": "user", "content": query_to_process, "id": query_id, "created_at": current_time})
-
+                st.session_state.chat_history.append({"role": "user", "content": user_query, "id": query_id})
             with chat_container:
                 with st.chat_message("user", avatar=user_avatar):
-                    st.markdown(f"<div style='color: black;'>{query_to_process}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='color: black;'>{user_query}</div>", unsafe_allow_html=True)
                 with st.spinner("Generating response..."):
-                    intent = infer_user_intent(query_to_process, st.session_state.table_names)
-                    logging.info(f"User query: {query_to_process}, Intent: {intent}")
-
+                    intent = infer_user_intent(user_query, st.session_state.table_names)
+                    logging.info(f"User query: {user_query}, Intent: {intent}")
                     column_info = {
                         table_name: [
                             (col, str(dtype)) for col, dtype in zip(
@@ -830,14 +759,10 @@ if st.session_state.initialized:
                             )
                         ] for table_name in st.session_state.dfs.keys()
                     }
-                    conversation_history = [
-                        {"role": item["role"], "content": item["content"], "id": item["id"]}
-                        for item in st.session_state.chat_history
-                    ] if st.session_state.show_history else None
-
+                    conversation_history = st.session_state.chat_history if st.session_state.show_history else None
                     if st.session_state.embedding_status == "Completed":
                         rag_response = process_query_with_rag(
-                            user_query=query_to_process,
+                            user_query=user_query,
                             vector_stores=st.session_state.vector_stores,
                             table_names=intent["tables"],
                             schema_name="O3_AI_DB_SCHEMA",
@@ -852,13 +777,13 @@ if st.session_state.initialized:
                             result_df = execute_snowflake_query(sql_query)
                             if result_df is not None and not result_df.empty:
                                 result_df_str = result_df.to_json(orient="records", indent=2)
-                                nlp_summary = generate_nlp_summary(query_to_process, sql_query, result_df_str)
+                                nlp_summary = generate_nlp_summary(user_query, sql_query, result_df_str)
                                 final_response = f"{nlp_summary}\n\nDetailed results:\n" if not st.session_state.debug_mode else \
                                                 f"SQL Query:\n```sql\n{sql_query}\n```\n{nlp_summary}\n\nDetailed results:\n"
-                                vis_recommendation = determine_visualization_type(query_to_process, sql_query, result_df_str)
+                                vis_recommendation = determine_visualization_type(user_query, sql_query, result_df_str)
                                 fig = create_visualization(result_df, vis_recommendation)
 
-                                insert_query_response_to_snowflake(query_to_process, query_id, response_id, final_response)
+                                insert_query_response_to_snowflake(user_query, query_id, response_id, final_response)
 
                                 with st.chat_message("assistant", avatar=assistant_avatar):
                                     st.markdown(f"<div>{final_response}</div>", unsafe_allow_html=True)
@@ -868,7 +793,7 @@ if st.session_state.initialized:
                                         st.caption(f"Visualization notes: {vis_recommendation.get('description', '')}")
 
                                 response_data = {
-                                    "user_query": query_to_process,
+                                    "user_query": user_query,
                                     "query_id": query_id,
                                     "response_id": response_id,
                                     "text_response": final_response,
@@ -881,7 +806,7 @@ if st.session_state.initialized:
                                 st.session_state.messages.append({"role": "assistant", "content": final_response, "id": response_id, "created_at": current_time})
                                 st.session_state.query_response_ids.append({
                                     "query_id": query_id,
-                                    "query": query_to_process,
+                                    "query": user_query,
                                     "response_id": response_id
                                 })
                                 if st.session_state.show_history:
@@ -889,12 +814,12 @@ if st.session_state.initialized:
                                 log_token_usage(nlp_tokens, table_tokens, viz_tokens)
                             else:
                                 no_data_msg = "No results found. Please rephrase your question."
-                                insert_query_response_to_snowflake(query_to_process, query_id, response_id, no_data_msg)
+                                insert_query_response_to_snowflake(user_query, query_id, response_id, no_data_msg)
 
                                 with st.chat_message("assistant", avatar=assistant_avatar):
                                     st.warning(no_data_msg)
                                 response_data = {
-                                    "user_query": query_to_process,
+                                    "user_query": user_query,
                                     "query_id": query_id,
                                     "response_id": response_id,
                                     "text_response": no_data_msg,
@@ -907,16 +832,16 @@ if st.session_state.initialized:
                                 st.session_state.messages.append({"role": "assistant", "content": no_data_msg, "id": response_id, "created_at": current_time})
                                 st.session_state.query_response_ids.append({
                                     "query_id": query_id,
-                                    "query": query_to_process,
+                                    "query": user_query,
                                     "response_id": response_id
                                 })
                         else:
-                            insert_query_response_to_snowflake(query_to_process, query_id, response_id, rag_response)
+                            insert_query_response_to_snowflake(user_query, query_id, response_id, rag_response)
 
                             with st.chat_message("assistant", avatar=assistant_avatar):
                                 st.markdown(f"<div>{rag_response}</div>", unsafe_allow_html=True)
                             response_data = {
-                                "user_query": query_to_process,
+                                "user_query": user_query,
                                 "query_id": query_id,
                                 "response_id": response_id,
                                 "text_response": rag_response,
@@ -929,24 +854,24 @@ if st.session_state.initialized:
                             st.session_state.messages.append({"role": "assistant", "content": rag_response, "id": response_id, "created_at": current_time})
                             st.session_state.query_response_ids.append({
                                 "query_id": query_id,
-                                "query": query_to_process,
+                                "query": user_query,
                                 "response_id": response_id
                             })
                     else:
                         llm_response = get_llm_response(
-                            user_query=query_to_process,
+                            user_query=user_query,
                             table_name=", ".join(st.session_state.table_names),
                             schema_name="O3_AI_DB",
                             database_name="O3_AI_DB_SCHEMA",
                             column_info=column_info,
                             conversation_history=conversation_history
                         )
-                        insert_query_response_to_snowflake(query_to_process, query_id, response_id, llm_response)
+                        insert_query_response_to_snowflake(user_query, query_id, response_id, llm_response)
 
                         with st.chat_message("assistant", avatar=assistant_avatar):
                             st.markdown(f"<div>{llm_response}</div>", unsafe_allow_html=True)
                         response_data = {
-                            "user_query": query_to_process,
+                            "user_query": user_query,
                             "query_id": query_id,
                             "response_id": response_id,
                             "text_response": llm_response,
@@ -959,7 +884,7 @@ if st.session_state.initialized:
                         st.session_state.messages.append({"role": "assistant", "content": llm_response, "id": response_id, "data": None, "visualization": None, "sql_query": None})
                         st.session_state.query_response_ids.append({
                             "query_id": query_id,
-                            "query": query_to_process,
+                            "query": user_query,
                             "response_id": response_id
                         })
 
