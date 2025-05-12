@@ -271,6 +271,8 @@ def process_query_with_rag(user_query, vector_stores, table_names, schema_name, 
     IMPORTANT ACCESS CONTROL INFORMATION:
     - The current user has user_code='{user_code}' and plant_code='{plant_code}'
     - This user can ONLY access data with this user_code and plant_code
+    - Make sure do not explicitly mention the user_code and plant_code in the NLP response.
+    - Make sure do not explicitly mention PUID in the tabular data response.        
 
     The user's current query is: "{user_query}"
 
@@ -285,10 +287,15 @@ def process_query_with_rag(user_query, vector_stores, table_names, schema_name, 
        - For machine_access_info_ai table: user_code='{user_code}' AND Plantcode='{plant_code}'
        - When joining with other tables, ensure you're filtering through the relationship with machine_access_info_ai
     6. Keep your SQL query efficient and focused on answering the specific question
-    7. If the query would return data for other users or plants, add a WHERE clause to filter for this user's access only
+    7. If the query would return data for other users or plants, add a WHERE clause to filter for this user's access only.
     8. If the query cannot be satisfied with the user's access level, respond with: "You don't have access to this data. Please verify your credentials."
+    9. Important:
+       - If the SQL query executes successfully but returns no data, and the user has access to that data, 
+         respond with: "I did not find any data regarding your question."
+       - Do not say "You don't have access to this data" in this scenario.
+       - If there is an actual access issue, then indicate that appropriately.
     9. In case the SQL query generation fails, provide a user-friendly response: "I'm having trouble understanding that request. Could you please rephrase your question?"
-
+    
     If the query is not asking for data or cannot be answered with SQL:
     1. Provide a helpful explanation about OEE concepts
     2. Suggest a reformulation of their question that could be answered with the available data
