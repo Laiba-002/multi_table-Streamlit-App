@@ -813,7 +813,7 @@ if st.session_state.initialized:
                                     st.session_state.chat_history.append({"role": "assistant", "content": final_response, "id": response_id, "created_at": current_time})
                                 log_token_usage(nlp_tokens, table_tokens, viz_tokens)
                             else:
-                                no_data_msg = "No results found. Please rephrase your question."
+                                no_data_msg = "No results found."
                                 insert_query_response_to_snowflake(user_query, query_id, response_id, no_data_msg)
 
                                 with st.chat_message("assistant", avatar=assistant_avatar):
