@@ -271,8 +271,11 @@ def process_query_with_rag(user_query, vector_stores, table_names, schema_name, 
     IMPORTANT ACCESS CONTROL INFORMATION:
     - The current user has user_code='{user_code}' and plant_code='{plant_code}'
     - This user can ONLY access data with this user_code and plant_code
-    - Make sure never explicitly mention the user_code and plant_code in the NLP or human language response.
-    - Make sure never explicitly mention PUID, Shift_ID, user_code, plant_code and ID in the tabular data response.        
+    - Make sure never explicitly mention the user_code and plant_code in each NLP or human language response as it is confidential.
+    - Make sure never explicitly mention PUID column in each tabular data response as it is confidential.        
+    - Make sure never explicitly mention SHIFT_ID column  in each tabular data response as it is confidential.   
+    - Make sure never explicitly mention ID column in each tabular data response as it is confidential.        
+
 
     The user's current query is: "{user_query}"
 
