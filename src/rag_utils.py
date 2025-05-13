@@ -283,6 +283,7 @@ def process_query_with_rag(user_query, vector_stores, table_names, schema_name, 
     2. Format your SQL code block with ```sql at the beginning and ``` at the end
     3. Make sure to write standard SQL compatible with Snowflake
     4. Use proper column names as shown above
+       - Do not use wrong Column names to generate sql query , always use right and accurate column names becasue it does not answer anything if you use wrong column name and query will crash.
     5. ALWAYS apply these filters to ANY query you write:
        - For machine_access_info_ai table: user_code='{user_code}' AND Plantcode='{plant_code}'
        - When joining with other tables, ensure you're filtering through the relationship with machine_access_info_ai
