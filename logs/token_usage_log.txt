@@ -1,2 +1,5 @@
 {"timestamp": "2025-05-01 12:19:59", "nlp_tokens": 60, "table_tokens": 6, "viz_tokens": 51, "total_tokens": 117}
 {"timestamp": "2025-05-01 12:48:28", "nlp_tokens": 35, "table_tokens": 10, "viz_tokens": 51, "total_tokens": 96}
+{"timestamp": "2025-05-19 21:37:10", "nlp_tokens": 38, "table_tokens": 2, "viz_tokens": 48, "total_tokens": 88}
+{"timestamp": "2025-05-19 22:23:08", "nlp_tokens": 23, "table_tokens": 2, "viz_tokens": 47, "total_tokens": 72}
+{"timestamp": "2025-05-19 22:25:30", "nlp_tokens": 61, "table_tokens": 20, "viz_tokens": 54, "total_tokens": 135}

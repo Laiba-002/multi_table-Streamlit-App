@@ -957,6 +957,8 @@ st.set_page_config(
 # OpenAI client
 client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY"))
 GPT_MODEL = "gpt-4o-mini"
+user_code= 'A-1704902113649'
+plant_code= 'O-2372838648201'
 
 # Initialize session state variables
 if 'initialized' not in st.session_state:
@@ -986,7 +988,9 @@ if 'schema_columns' not in st.session_state:
 if 'selected_history_index' not in st.session_state:
     st.session_state.selected_history_index = None
 if 'user_code' not in st.session_state:
-    st.session_state.user_code = None
+    st.session_state.user_code = user_code
+if 'plant_code' not in st.session_state:
+    st.session_state.plant_code = plant_code
 if 'snowflake_conn' not in st.session_state:
     st.session_state.snowflake_conn = None
 if 'table_metadata' not in st.session_state:
@@ -1028,14 +1032,15 @@ if 'transcribed_query' not in st.session_state:
     st.session_state.transcribed_query = None
 if 'query_processed' not in st.session_state:
     st.session_state.query_processed = False
+
 current_time = datetime.now().isoformat()
-# Get query parameters
-query_params = st.query_params
-user_code = query_params.get("usercode", [None])
-plant_code = query_params.get("plantcode", [None])
-if user_code and plant_code:
-    st.session_state.user_code = user_code
-    st.session_state.plant_code = plant_code
+# # Get query parameters
+# query_params = st.query_params
+# user_code = query_params.get("usercode", [None])
+# plant_code = query_params.get("plantcode", [None])
+# if user_code and plant_code:
+#     st.session_state.user_code = user_code
+#     st.session_state.plant_code = plant_code
 
 # Snowflake Connection Function
 def init_snowflake_connection():
@@ -1178,23 +1183,11 @@ def insert_query_response_to_snowflake(query, query_id, response_id, response_te
             cursor.close()
 
 def initialize_user_session():
-    # Always get user_code and plant_code from session or query params
-    user_code = st.session_state.get('user_code')
-    plant_code = st.session_state.get('plant_code')
-
-    if not user_code or not plant_code:
-        user_code = st.query_params.get("usercode", [None])[0]
-        plant_code = st.query_params.get("plantcode", [None])[0]
-
-    st.session_state.user_code = user_code
-    st.session_state.plant_code = plant_code
-
-    if user_code and plant_code:
-        st.session_state.user_authenticated = True
-        logging.info(f"User authenticated: {user_code}, Plant: {plant_code}")
-    else:
-        st.session_state.user_authenticated = False
-        logging.error("User authentication failed. Missing usercode or plantcode in URL parameters.")
+    # Always get user_code and plant_code from session
+  st.session_state.user_code = user_code
+  st.session_state.plant_code = plant_code
+  st.session_state.user_authenticated = True
+  logging.info(f"User authenticated: {user_code}, Plant: {plant_code}")
 def initialize_app():
     if 'user_authenticated' not in st.session_state:
         initialize_user_session()
