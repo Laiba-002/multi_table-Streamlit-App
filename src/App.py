@@ -923,7 +923,7 @@ from openai import OpenAI
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
-import tiktoken
+# import tiktoken
 import logging
 import uuid
 import tempfile  # Added for temporary file handling
@@ -1200,29 +1200,29 @@ if not st.session_state.history_loaded and st.session_state.user_authenticated:
     load_chat_history_from_snowflake()
     st.session_state.history_loaded = True
 
-def count_tokens(text: str, model: str = "gpt-4o-mini") -> int:
-    try:
-        enc = tiktoken.encoding_for_model(model)
-        return len(enc.encode(text))
-    except Exception as e:
-        logging.error(f"Token counting error: {str(e)}")
-        return len(text.split())
+# def count_tokens(text: str, model: str = "gpt-4o-mini") -> int:
+#     try:
+#         enc = tiktoken.encoding_for_model(model)
+#         return len(enc.encode(text))
+#     except Exception as e:
+#         logging.error(f"Token counting error: {str(e)}")
+#         return len(text.split())
 
-def log_token_usage(nlp_tokens, table_tokens, viz_tokens):
-    total_tokens = nlp_tokens + table_tokens + viz_tokens
-    log_data = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "nlp_tokens": nlp_tokens,
-        "table_tokens": table_tokens,
-        "viz_tokens": viz_tokens,
-        "total_tokens": total_tokens
-    }
-    os.makedirs("logs", exist_ok=True)
-    try:
-        with open("logs/token_usage_log.txt", "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_data) + "\n")
-    except Exception as e:
-        logging.error(f"Error writing to token usage log: {str(e)}")
+# def log_token_usage(nlp_tokens, table_tokens, viz_tokens):
+#     total_tokens = nlp_tokens + table_tokens + viz_tokens
+#     log_data = {
+#         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+#         "nlp_tokens": nlp_tokens,
+#         "table_tokens": table_tokens,
+#         "viz_tokens": viz_tokens,
+#         "total_tokens": total_tokens
+#     }
+#     os.makedirs("logs", exist_ok=True)
+#     try:
+#         with open("logs/token_usage_log.txt", "a", encoding="utf-8") as f:
+#             f.write(json.dumps(log_data) + "\n")
+#     except Exception as e:
+#         logging.error(f"Error writing to token usage log: {str(e)}")
 
 # Speech-to-Text Function
 # def speech_to_text(audio_bytes):
@@ -1275,7 +1275,7 @@ def execute_snowflake_query(query):
         df = pd.DataFrame(result, columns=columns)
         cursor.close()
         global table_tokens
-        table_tokens = count_tokens(df.head(10).to_csv(index=False))
+        # table_tokens = count_tokens(df.head(10).to_csv(index=False))
         st.session_state.query_cache[query_hash] = df
         logging.info(f"Executed and cached query: {query}")
         return df
@@ -1320,7 +1320,7 @@ def determine_visualization_type(user_query, sql_query, result_df_str):
         )
         vis_recommendation = json.loads(vis_response.choices[0].message.content)
         global viz_tokens
-        viz_tokens = count_tokens(vis_recommendation.get("description", ""))
+        # viz_tokens = count_tokens(vis_recommendation.get("description", ""))
         logging.info(f"Visualization type determined: {vis_recommendation['viz_type']}")
         return vis_recommendation
     except Exception as e:
@@ -1396,7 +1396,7 @@ def generate_nlp_summary(user_query, sql_query, result_df_str):
         """
         nlp_summary = call_openai(nlp_summary_prompt, "You are a data analyst.")
         global nlp_tokens
-        nlp_tokens = count_tokens(nlp_summary)
+        # nlp_tokens = count_tokens(nlp_summary)
         logging.info(f"NLP summary generated: {nlp_summary[:50]}...")
         return nlp_summary
     except Exception as e:
@@ -1688,7 +1688,7 @@ if st.session_state.initialized:
                                 })
                                 if st.session_state.show_history:
                                     st.session_state.chat_history.append({"role": "assistant", "content": final_response, "id": response_id, "created_at": current_time})
-                                log_token_usage(nlp_tokens, table_tokens, viz_tokens)
+                                # log_token_usage(nlp_tokens, table_tokens, viz_tokens)
                             else:
                                 no_data_msg = "No results found."
                                 insert_query_response_to_snowflake(user_query, query_id, response_id, no_data_msg)
