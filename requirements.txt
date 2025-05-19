@@ -9,7 +9,8 @@ matplotlib-inline==0.1.7
 
 # === LLMs & Embeddings ===
 openai==1.68.2
-tiktoken==0.6.0
+tiktoken==0.3.3
+
 # faiss-cpu==1.10.0
 sentence-transformers==3.4.1
 
