@@ -1068,7 +1068,15 @@ def init_snowflake_connection():
         st.error(f"Error connecting to Snowflake: {str(e)}")
         logging.error(f"Snowflake connection error: {str(e)}")
         return None
-
+    
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+    """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 # Snowflake Chat History Persistence Functions
 def load_chat_history_from_snowflake():
     conn = init_snowflake_connection()
