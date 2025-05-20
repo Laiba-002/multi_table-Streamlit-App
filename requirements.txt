@@ -34,8 +34,8 @@ snowflake-cli==3.6.0
 
 # === ML/DL Stack (optional, keep only what you need) ===
 scikit-learn==1.6.1
-# scipy==1.15.2
-# torch==2.6.0
+
+
 
 # === Others (must-have utils) ===
 joblib==1.4.2
@@ -44,15 +44,7 @@ typing_extensions==4.13.0
 packaging==24.2
 pydub>=0.25.1
 audio-recorder-streamlit==0.0.10  
-# # === Only if needed ===
-# markdown-it-py==3.0.0
-# mdurl==0.1.2
 
 
-# # === For Audio Transcription ===
-# # Core STT
-# SpeechRecognition==3.10.0
-# # PyAudio is compatible in local running
-# PyAudio==0.2.13
-# # PyAudio removed due to incompatibility in cloud
-# streamlit-webrtc==0.45.1
+
+
