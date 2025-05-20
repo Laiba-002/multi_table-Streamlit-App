@@ -233,7 +233,7 @@ streamlit-storage/
 
 # Streamlit-specific temporary files
 **/.streamlit_secrets.toml
-.streamlit/config.toml
+!.streamlit/config.toml
 .streamlit/secrets.toml
 .streamlit_cache/
 .streamlit_static/
